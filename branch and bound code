@@ -1,0 +1,319 @@
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <utility>
+#include <cstring>
+#include <climits>
+using namespace std;
+
+// N is number of total nodes on the graph or the cities in the map
+#define N 8
+
+// Sentinal value for representing infinity
+#define INF INT_MAX
+#define inf 999
+
+// State Space Tree nodes
+struct Node
+{
+    // stores edges of state space tree
+    // helps in tracing path when answer is found
+    vector<pair<int, int> > path;
+
+    // stores the reduced matrix
+    int rMat[N][N];
+
+    
+    int cost;
+
+    int location;
+
+    // stores number of cities visited so far
+    int level;
+};
+
+// Function to allocate a new node (i, j) corresponds to visiting
+Node* newNode(int pmat[N][N], vector<pair<int, int> > const &path,
+            int level, int i, int j)
+{
+    Node* node = new Node;
+    node->path = path;
+    if (level != 0)
+        // add current edge to path
+        node->path.push_back(make_pair(i, j));
+
+    // copy data from parent node to current node
+    memcpy(node->rMat, pmat,
+        sizeof node->rMat);
+
+    // Change all entries of row i and column j to infinity
+    // skip for root node
+    for (int k = 0; level != 0 && k < N; k++)
+    {
+        // set outgoing edges for city i to infinity
+        node->rMat[i][k] = INF;
+
+        // set incoming edges to city j to infinity
+        node->rMat[k][j] = INF;
+    }
+
+    // here start node is 0
+    node->rMat[j][0] = INF;
+
+    // set number of cities visited so far
+    node->level = level;
+
+    // assign current city number
+    node->location = j;
+
+    // return node
+    return node;
+}
+
+// Function to reduce each row in such a way that
+// there must be at least one zero in each row
+int RedRow(int rMat[N][N], int row[N])
+{
+    // initialize row array to INF
+    fill_n(row, N, INF);
+
+    // row[i] contains minimum in row i
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            if (rMat[i][j] < row[i])
+                row[i] = rMat[i][j];
+
+    // reduce the minimum value from each element in each row
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            if (rMat[i][j] != INF && row[i] != INF)
+                rMat[i][j] -= row[i];
+}
+
+// Function to reduce each column in such a way that
+// there must be at least one zero in each column
+int RedCol(int rMat[N][N], int col[N])
+{
+    // initialize col array to INF
+    fill_n(col, N, INF);
+
+    // col[j] contains minimum in col j
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            if (rMat[i][j] < col[j])
+                col[j] = rMat[i][j];
+
+    // reduce the minimum value from each element in each column
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            if (rMat[i][j] != INF && col[j] != INF)
+                rMat[i][j] -= col[j];
+}
+
+// Function to get the lower bound on
+// on the path starting at current min node
+int costcalc(int rMat[N][N])
+{
+    // initialize cost to 0
+    int cost = 0;
+
+    // Row Reduction
+    int row[N];
+    RedRow(rMat, row);
+
+    // Column Reduction
+    int col[N];
+    RedCol(rMat, col);
+
+    // the total expected cost
+    // is the sum of all reductions
+    for (int i = 0; i < N; i++)
+        cost += (row[i] != INT_MAX) ? row[i] : 0,
+            cost += (col[i] != INT_MAX) ? col[i] : 0;
+
+    return cost;
+}
+
+// print list of cities visited following least cost
+void printPath(vector<pair<int, int> > const &list)
+{
+    for (int i = 0; i < list.size(); i++)
+        cout << list[i].first + 1 << " -> "
+             << list[i].second + 1 << endl;
+}
+
+// Comparison object to be used to order the heap
+struct comp {
+    bool operator()(const Node* lhs, const Node* rhs) const
+    {
+        return lhs->cost > rhs->cost;
+    }
+};
+
+// Function to solve Traveling Salesman Problem using Branch and Bound
+int solve(int costMatrix[N][N])
+{
+    // Create a priority queue to store live nodes of search tree;
+    priority_queue<Node*, std::vector<Node*>, comp> p_queue;
+
+    vector<pair<int, int> > v;
+
+    // create a root node and calculate its cost
+    // The TSP starts from first city i.e. node 0
+    Node* root = newNode(costMatrix, v, 0, -1, 0);
+
+    // get the lower bound of the path starting at node 0
+    root->cost = costcalc(root->rMat);
+
+    // Add root to list of live nodes;
+    p_queue.push(root);
+
+    // Finds a live node with least cost, add its children to list of
+    // live nodes and finally deletes it from the list
+    while (!p_queue.empty())
+    {
+        // Find a live node with least estimated cost
+        Node* min = p_queue.top();
+
+        // The found node is deleted from the list of live nodes
+        p_queue.pop();
+
+        // i stores current city number
+        int i = min->location;
+
+        // if all cities are visited
+        if (min->level == N - 1)
+        {
+            // return to starting city
+            min->path.push_back(make_pair(i, 0));
+
+            // print list of cities visited;
+            printPath(min->path);
+
+            // return optimal cost
+            return min->cost;
+        }
+
+        // do for each child of min
+        // (i, j) forms an edge in space tree
+        for (int j = 0; j < N; j++)
+        {
+            if (min->rMat[i][j] != INF)
+            {
+                
+                Node* child = newNode(min->rMat, min->path,
+                    min->level + 1, i, j);
+
+                /* Cost of the child =
+                    cost of parent node +
+                    cost of the edge(i, j) +
+                    lower bound of the path starting at node j
+                */
+                child->cost = min->cost + min->rMat[i][j]
+                            + costcalc(child->rMat);
+
+                // Add child to list of live nodes
+                p_queue.push(child);
+            }
+        }
+
+    }
+}
+
+int main()
+{
+    // cost matrix for traveling salesman problem.
+
+   ///SAMPLE TEST CASE 1
+/*
+    cout<<"TEST CASE = 1 SAMPLE SIZE = "<<N<<endl;
+    int costMatrix[N][N] =
+    {
+        {inf, 2,   1,   inf},
+        {2,   inf, 4,   3},
+        {1,   4,   inf, 2},
+        {inf, 3,   2,   inf}
+    };
+
+    ///SAMPLE TEST CASE 2
+
+    cout<<"TEST CASE = 2 SAMPLE SIZE = "<<N<<endl;
+    int costMatrix[N][N] =
+    {
+        {inf, 3,   1,   5,   8},
+        {3,   inf, 6,   7,   9},
+        {1,   6,   inf, 4,   2},
+        {5,   7,   4,   inf, 3},
+        {8,   9,   2,   3,   inf}
+    };
+
+
+    ///SAMPLE TEST CASE 3
+
+    cout<<"TEST CASE = 3 SAMPLE SIZE = "<<N<<endl;
+    int costMatrix[N][N] =
+    {
+        {inf, 5,   inf, 6,   5,   4},
+        {5,   inf, 2,   4,   3,   inf},
+        {inf, 2,   inf, 1,   inf, inf},
+        {6,   4,   1,   inf, 7,   inf},
+        {5,   3,   inf, 7,   inf, 3},
+        {4,   inf, inf, inf, 3,   inf}
+    };
+
+
+
+    ///SAMPLE TEST CASE 4
+
+    cout<<"TEST CASE = 4 SAMPLE SIZE = "<<N<<endl;
+    int costMatrix[N][N]={
+        {inf, 5,   inf, 6,   5,   4,    5},
+        {5,   inf, 2,   24,   3,   inf,  8},
+        {inf, 2,   inf, 1,   inf, inf,  1},
+        {6,   4,   11,   inf, 37,   inf,  4},
+        {5,   3,   inf, 7,   inf, 13,    5},
+        {4,   inf, inf, inf, 3,   inf,  1},
+        {8,   55,   22,   1,   inf,   3,  inf}
+    };
+*/
+
+    ///SAMPLE TEST CASE 5
+
+    cout<<"TEST CASE = 5 SAMPLE SIZE = "<<N<<endl;
+    int costMatrix[N][N] =
+    {
+        {inf, 5,   inf, 6,   5,   4,    5,  2},
+        {5,   inf, 2,   24,   3,   inf,  8,  1},
+        {inf, 2,   inf, 1,   inf, inf,  1,  6},
+        {6,   4,   11,   inf, 37,   inf,  4,  7},
+        {5,   3,   inf, 7,   inf, 13,    5,  9},
+        {4,   inf, inf, inf, 3,   inf,  1,  4},
+        {8,   55,   22,   1,   inf,   3,  inf,  7},
+        {2,   7,   2,   7,   inf,   32,  17, inf}
+    };
+
+
+
+
+          cout<<endl<<"THE GIVEN INPUT REPRESENTING THE DISTANCES IS SHOWN BY A MATRIX BELOW :: "<<endl<<endl;
+    for(int a=0;a<N;a++)
+    {
+        for(int b=0;b<N;b++)
+        {
+            if( costMatrix[a][b] == 999)
+            {
+                cout<<"INF\t";
+            }
+            else
+            {
+                cout<<costMatrix[a][b]<<"\t";
+            }
+        }
+        cout<<endl;
+    }
+    cout<<endl<<"THE ROUTE WILL BE AS SHOWN BELOW :: "<<endl<<endl;
+
+    cout << "\n\nTotal Cost is " << solve(costMatrix)<<endl;
+
+    return 0;
+}
